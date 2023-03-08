@@ -4,12 +4,16 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.cluster.hierarchy import dendrogram, linkage
 from scipy.stats import pearsonr
+from scipy.spatial.distance import cdist
 from sklearn.preprocessing import OrdinalEncoder
 from sklearn.decomposition import PCA
 
 import gensim.downloader as api
 from gensim.models import FastText
 
+VANILLA = 1
+PCA_CORR = 2
+UMAP = 3
 train_file = 'train.csv'
 
 
@@ -39,27 +43,40 @@ def print_histogram(data, feature=None):
     plt.show()
 
 
-def vanilla_encoder(x, feature):
+def vanilla_encoder(df, feature):
     enc = OrdinalEncoder()
-    enc.fit(x[feature].values.reshape(-1, 1))
-    x[feature] = enc.transform(x[feature].values.reshape(-1, 1))
+    enc.fit(df[feature].values.reshape(-1, 1))
+    df[feature] = enc.transform(df[feature].values.reshape(-1, 1))
 
 
-def corr_encoder(df, feature):
+def corr_encoder(df, feature, plot_flag=False):
     sales_per_category = pd.DataFrame({g: s.values for g, s in df.groupby(feature).sales})
     categories = sales_per_category.columns
     corr = sales_per_category.corr()
-    print(corr.shape)
     pca = PCA(n_components='mle', svd_solver='full')
     encoded_categories = pca.fit_transform(corr)
-    # plot_encoding(encoded_categories, categories, 3)
-    # encoded_dist_map(encoded_categories,categories)
-    return encoded_categories
+    if plot_flag:
+        plot_encoding(encoded_categories, categories, 3)
+        encoded_dist_map(encoded_categories, categories)
+    encoded_categories = [",".join(vec.astype(str)) for vec in encoded_categories]
+    temp = df[feature].replace(to_replace=categories, value=encoded_categories)
+    df['temp'] = temp
+    df[['d1', 'd2', 'd3']] = df.temp.str.split(',', expand=True)
+    df.drop('temp', axis=1, inplace=True)
+
+
+def encoding(df, feature, mode):
+    if mode == VANILLA:
+        vanilla_encoder(df, feature)
+    elif mode == PCA_CORR:
+        corr_encoder(df, feature)
 
 
 def encoded_dist_map(encoding, categories):
-    diff = encoding - encoding.T
-    print(diff.shape)
+    dist = 1 / (1 + cdist(encoding, encoding))
+    dist = pd.DataFrame(dist, columns=categories, index=categories)
+    sns.clustermap(dist, cmap='Blues')
+    plt.savefig('family_dist_after_pca.png')
 
 
 def plot_encoding(encoding, categories, dim):
@@ -74,8 +91,7 @@ def plot_encoding(encoding, categories, dim):
                 size=10, zorder=1,
                 color='k')
 
-    # plt.savefig(f'family_encoding_{dim}d.png')
-    plt.show()
+    plt.savefig(f'family_encoding_{dim}d.png')
 
 
 def main():
@@ -83,8 +99,9 @@ def main():
     y = df.sales
     x = df.drop('sales', axis=1)
     x = temporal_date(x)
-    vanilla_encoder(x, 'family')
-    corr_encoder(df, 'family')
+    encoding(df, 'family', PCA_CORR)
+    pd.set_option('display.max_columns', None)
+    print(df.head())
 
 
 if __name__ == '__main__':
