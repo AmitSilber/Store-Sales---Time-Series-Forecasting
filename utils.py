@@ -5,6 +5,7 @@ import seaborn as sns
 from scipy.cluster.hierarchy import dendrogram, linkage
 from scipy.stats import pearsonr
 from sklearn.preprocessing import OrdinalEncoder
+from sklearn.decomposition import PCA
 
 import gensim.downloader as api
 from gensim.models import FastText
@@ -44,12 +45,47 @@ def vanilla_encoder(x, feature):
     x[feature] = enc.transform(x[feature].values.reshape(-1, 1))
 
 
+def corr_encoder(df, feature):
+    sales_per_category = pd.DataFrame({g: s.values for g, s in df.groupby(feature).sales})
+    categories = sales_per_category.columns
+    corr = sales_per_category.corr()
+    print(corr.shape)
+    pca = PCA(n_components='mle', svd_solver='full')
+    encoded_categories = pca.fit_transform(corr)
+    # plot_encoding(encoded_categories, categories, 3)
+    # encoded_dist_map(encoded_categories,categories)
+    return encoded_categories
+
+
+def encoded_dist_map(encoding, categories):
+    diff = encoding - encoding.T
+    print(diff.shape)
+
+
+def plot_encoding(encoding, categories, dim):
+    fig = plt.figure(figsize=(12, 12))
+    if dim == 3:
+        ax = fig.add_subplot(projection='3d')
+    else:
+        ax = fig.add_subplot()
+    for i in range(len(encoding)):
+        ax.scatter(*list(encoding[i, :]), color='b')
+        ax.text(*list(encoding[i, :]), '%s' % (categories[i]),
+                size=10, zorder=1,
+                color='k')
+
+    # plt.savefig(f'family_encoding_{dim}d.png')
+    plt.show()
+
+
 def main():
     df = pd.read_csv(train_file, index_col=0, parse_dates=True)
     y = df.sales
     x = df.drop('sales', axis=1)
     x = temporal_date(x)
     vanilla_encoder(x, 'family')
+    corr_encoder(df, 'family')
+
 
 if __name__ == '__main__':
     main()
